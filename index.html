@@ -62,29 +62,6 @@
       cursor: not-allowed;
     }
 
-    #startScreen {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: linear-gradient(#4b79a1, #283e51);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 10;
-      transition: all 1s ease;
-      overflow: hidden;
-    }
-
-    #startScreen h1 {
-      font-size: 48px;
-      margin-bottom: 20px;
-    }
-
-    #startScreen button {
-      font-size: 20px;
-    }
-
     #afkMessage {
       top: 50%;
       left: 50%;
@@ -101,14 +78,8 @@
 
 <canvas id="game"></canvas>
 
-<!-- Úvodná obrazovka -->
-<div id="startScreen">
-  <h1>🌌 Orb Catcher EX</h1>
-  <button class="btn" id="startBtn">🎮 Štart hry</button>
-</div>
-
 <!-- Hlavné UI -->
-<div id="ui" class="hidden">
+<div id="ui">
   <div>XP: <span id="score">0</span></div>
   <button class="btn" id="unlockRed">🔓 Odomkni červený orb (250 XP)</button>
   <button class="btn" id="unlockMulti">🔓 Multi-Orb (1000 XP)</button>
@@ -122,7 +93,6 @@
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
-  // === Rozmery
   function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -130,18 +100,13 @@
   window.addEventListener("resize", resizeCanvas);
   resizeCanvas();
 
-  // === UI
   const ui = document.getElementById("ui");
   const scoreEl = document.getElementById("score");
-  const startScreen = document.getElementById("startScreen");
-  const startBtn = document.getElementById("startBtn");
   const unlockRed = document.getElementById("unlockRed");
   const unlockMulti = document.getElementById("unlockMulti");
   const upgradeLight = document.getElementById("upgradeLight");
   const afkMsg = document.getElementById("afkMessage");
 
-  // === Game state
-  let gameStarted = false;
   let gamePaused = false;
   let lastMoveTime = Date.now();
 
@@ -155,7 +120,7 @@
   let score = game.score;
   let orbs = [];
   let keys = {};
-  let orbFallActive = false;
+  let orbFallActive = true;
 
   const bucket = {
     x: canvas.width / 2 - 50,
@@ -279,15 +244,11 @@
     requestAnimationFrame(gameLoop);
   }
 
-  // === Spustenie hry
-  startBtn.addEventListener("click", () => {
-    startScreen.style.transform = "translateY(-100%)";
-    ui.classList.remove("hidden");
-    orbFallActive = true;
-    gameStarted = true;
-    setInterval(spawnOrb, 700);
-    gameLoop();
-  });
+  // === Spustenie hry hneď (bez štartovacej obrazovky)
+  ui.classList.remove("hidden");
+  orbFallActive = true;
+  setInterval(spawnOrb, 700);
+  gameLoop();
 
   // === Ovládanie
   window.addEventListener("keydown", (e) => {
@@ -305,6 +266,9 @@
       game.unlockedRed = true;
       orbTypes[2].unlocked = true;
       unlockRed.disabled = true;
+      score -= 250;
+      game.score = score;
+      scoreEl.textContent = score;
       saveGame();
     }
   });
@@ -313,6 +277,9 @@
     if (score >= 1000 && !game.unlockedMulti) {
       game.unlockedMulti = true;
       unlockMulti.disabled = true;
+      score -= 1000;
+      game.score = score;
+      scoreEl.textContent = score;
       setInterval(() => {
         for (let i = 0; i < 10; i++) spawnOrb();
       }, 5000);
@@ -324,11 +291,14 @@
     if (score >= 500 && !game.upgradeLight) {
       game.upgradeLight = true;
       upgradeLight.disabled = true;
+      score -= 500;
+      game.score = score;
+      scoreEl.textContent = score;
       saveGame();
     }
   });
 
-  // === Iniciálna UI
+  // === Inicializácia tlačidiel
   scoreEl.textContent = score;
   if (game.unlockedRed) unlockRed.disabled = true;
   if (game.unlockedMulti) unlockMulti.disabled = true;
