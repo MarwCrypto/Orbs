@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <title>Orb Catcher EX</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(#0f2027, #203a43, #2c5364);
+      font-family: 'Segoe UI', sans-serif;
+      color: white;
+    }
+
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
+
+    #ui, #afkMessage {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 5;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px #000;
+    }
+
+    #ui.hidden {
+      display: none;
+    }
+
+    .btn {
+      background: #1abc9c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      margin-top: 10px;
+      border-radius: 6px;
+      transition: transform 0.1s ease, background 0.3s;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #16a085;
+    }
+
+    .btn:active {
+      transform: scale(1.05);
+    }
+
+    .btn:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    #startScreen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: linear-gradient(#4b79a1, #283e51);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: all 1s ease;
+      overflow: hidden;
+    }
+
+    #startScreen h1 {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+
+    #startScreen button {
+      font-size: 20px;
+    }
+
+    #afkMessage {
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(200, 50, 50, 0.8);
+      padding: 30px;
+      display: none;
+      font-size: 20px;
+      border: 2px solid white;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- Úvodná obrazovka -->
+<div id="startScreen">
+  <h1>🌌 Orb Catcher EX</h1>
+  <button class="btn" id="startBtn">🎮 Štart hry</button>
+</div>
+
+<!-- Hlavné UI -->
+<div id="ui" class="hidden">
+  <div>XP: <span id="score">0</span></div>
+  <button class="btn" id="unlockRed">🔓 Odomkni červený orb (250 XP)</button>
+  <button class="btn" id="unlockMulti">🔓 Multi-Orb (1000 XP)</button>
+  <button class="btn" id="upgradeLight">✨ Orb Light (500 XP)</button>
+</div>
+
+<!-- AFK hláška -->
+<div id="afkMessage">🕒 Si AFK! Pohnúť vedrom na pokračovanie.</div>
+
+<script>
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  // === Rozmery
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  // === UI
+  const ui = document.getElementById("ui");
+  const scoreEl = document.getElementById("score");
+  const startScreen = document.getElementById("startScreen");
+  const startBtn = document.getElementById("startBtn");
+  const unlockRed = document.getElementById("unlockRed");
+  const unlockMulti = document.getElementById("unlockMulti");
+  const upgradeLight = document.getElementById("upgradeLight");
+  const afkMsg = document.getElementById("afkMessage");
+
+  // === Game state
+  let gameStarted = false;
+  let gamePaused = false;
+  let lastMoveTime = Date.now();
+
+  let game = JSON.parse(localStorage.getItem("orbSave")) || {
+    score: 0,
+    unlockedRed: false,
+    unlockedMulti: false,
+    upgradeLight: false
+  };
+
+  let score = game.score;
+  let orbs = [];
+  let keys = {};
+  let orbFallActive = false;
+
+  const bucket = {
+    x: canvas.width / 2 - 50,
+    y: canvas.height - 40,
+    width: 100,
+    height: 20,
+    speed: 7
+  };
+
+  const orbTypes = [
+    { color: "green", value: 1, unlocked: true },
+    { color: "blue", value: 5, unlocked: true },
+    { color: "red", value: 10, unlocked: game.unlockedRed }
+  ];
+
+  function saveGame() {
+    localStorage.setItem("orbSave", JSON.stringify(game));
+  }
+
+  function spawnOrb() {
+    if (!orbFallActive) return;
+
+    const unlocked = orbTypes.filter(o => o.unlocked);
+    let orb = unlocked[Math.floor(Math.random() * unlocked.length)];
+
+    if (Math.random() < 0.01) {
+      orb = { color: "gold", value: 100, glow: true };
+    }
+
+    orbs.push({
+      x: Math.random() * (canvas.width - 20),
+      y: -20,
+      radius: 12,
+      color: orb.color,
+      value: orb.value,
+      speed: 2 + Math.random() * 2,
+      glow: orb.glow || false
+    });
+  }
+
+  function drawOrbs() {
+    orbs.forEach(orb => {
+      ctx.beginPath();
+      ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+      ctx.shadowBlur = orb.glow || game.upgradeLight ? 15 : 0;
+      ctx.shadowColor = orb.color;
+      ctx.fillStyle = orb.color;
+      ctx.fill();
+      ctx.closePath();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "white";
+      ctx.font = "bold 12px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(`+${orb.value}`, orb.x, orb.y - orb.radius - 5);
+    });
+  }
+
+  function updateOrbs() {
+    for (let i = orbs.length - 1; i >= 0; i--) {
+      const orb = orbs[i];
+      orb.y += orb.speed;
+
+      if (
+        orb.y + orb.radius > bucket.y &&
+        orb.x > bucket.x &&
+        orb.x < bucket.x + bucket.width
+      ) {
+        score += orb.value;
+        orbs.splice(i, 1);
+        game.score = score;
+        scoreEl.textContent = score;
+        saveGame();
+      } else if (orb.y > canvas.height) {
+        orbs.splice(i, 1);
+      }
+    }
+  }
+
+  function drawBucket() {
+    ctx.fillStyle = "white";
+    ctx.fillRect(bucket.x, bucket.y, bucket.width, bucket.height);
+  }
+
+  function updateBucket() {
+    if (keys["ArrowLeft"]) {
+      bucket.x -= bucket.speed;
+      lastMoveTime = Date.now();
+    }
+    if (keys["ArrowRight"]) {
+      bucket.x += bucket.speed;
+      lastMoveTime = Date.now();
+    }
+
+    bucket.x = Math.max(0, Math.min(canvas.width - bucket.width, bucket.x));
+  }
+
+  function checkAFK() {
+    if (Date.now() - lastMoveTime > 10000 && !gamePaused) {
+      gamePaused = true;
+      afkMsg.style.display = "block";
+      orbFallActive = false;
+    }
+  }
+
+  function resumeFromAFK() {
+    if (gamePaused) {
+      gamePaused = false;
+      afkMsg.style.display = "none";
+      orbFallActive = true;
+    }
+  }
+
+  function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    updateBucket();
+    updateOrbs();
+    drawBucket();
+    drawOrbs();
+    checkAFK();
+    requestAnimationFrame(gameLoop);
+  }
+
+  // === Spustenie hry
+  startBtn.addEventListener("click", () => {
+    startScreen.style.transform = "translateY(-100%)";
+    ui.classList.remove("hidden");
+    orbFallActive = true;
+    gameStarted = true;
+    setInterval(spawnOrb, 700);
+    gameLoop();
+  });
+
+  // === Ovládanie
+  window.addEventListener("keydown", (e) => {
+    keys[e.key] = true;
+    resumeFromAFK();
+  });
+
+  window.addEventListener("keyup", (e) => {
+    keys[e.key] = false;
+  });
+
+  // === Tlačidlá
+  unlockRed.addEventListener("click", () => {
+    if (score >= 250 && !game.unlockedRed) {
+      game.unlockedRed = true;
+      orbTypes[2].unlocked = true;
+      unlockRed.disabled = true;
+      saveGame();
+    }
+  });
+
+  unlockMulti.addEventListener("click", () => {
+    if (score >= 1000 && !game.unlockedMulti) {
+      game.unlockedMulti = true;
+      unlockMulti.disabled = true;
+      setInterval(() => {
+        for (let i = 0; i < 10; i++) spawnOrb();
+      }, 5000);
+      saveGame();
+    }
+  });
+
+  upgradeLight.addEventListener("click", () => {
+    if (score >= 500 && !game.upgradeLight) {
+      game.upgradeLight = true;
+      upgradeLight.disabled = true;
+      saveGame();
+    }
+  });
+
+  // === Iniciálna UI
+  scoreEl.textContent = score;
+  if (game.unlockedRed) unlockRed.disabled = true;
+  if (game.unlockedMulti) unlockMulti.disabled = true;
+  if (game.upgradeLight) upgradeLight.disabled = true;
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
